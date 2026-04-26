@@ -46,6 +46,13 @@ Upload MRI/
 
 ## 🚀 Running Locally
 
+## PREVIEW : -
+<img width="1915" height="878" alt="image" src="https://github.com/user-attachments/assets/fedc0539-7092-4aaa-b6ee-930708212015" />
+<img width="1224" height="795" alt="image" src="https://github.com/user-attachments/assets/b282f634-ffd3-40b3-8dfe-92086ebe7925" />
+<img width="1107" height="542" alt="image" src="https://github.com/user-attachments/assets/ccf80adf-e129-4fb6-b53b-c855538d9193" />
+<img width="1919" height="832" alt="image" src="https://github.com/user-attachments/assets/64bfd01f-9aeb-4599-92a3-7d903c189258" />
+
+
 ### 1️⃣ Backend Setup
 
 ```bash
