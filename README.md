@@ -64,6 +64,8 @@ NeuroScan-AI/
 <img width="1107" height="542" alt="image" src="https://github.com/user-attachments/assets/ccf80adf-e129-4fb6-b53b-c855538d9193" />
 <img width="1919" height="832" alt="image" src="https://github.com/user-attachments/assets/64bfd01f-9aeb-4599-92a3-7d903c189258" />
 
+
+
 ## REPORT PREVIEW : - 
 <img width="659" height="743" alt="image" src="https://github.com/user-attachments/assets/d4e09ce7-4d3f-487d-a31e-8954ecd6325a" />
 <img width="651" height="421" alt="image" src="https://github.com/user-attachments/assets/ab1586e8-b74d-4ed5-826e-924ed36c2835" />
@@ -169,29 +171,6 @@ Generate downloadable medical report.
 | Very Mild Demented | Early signs             | 🟡        |
 | Mild Demented      | Cognitive impairment    | 🟠        |
 | Moderate Demented  | Advanced stage          | 🔴        |
-
----
-
-## 🔗 External Model Integration
-
-Expected model API:
-
-```
-POST /predict
-Content-Type: multipart/form-data
-
-Response:
-{
-  "prediction": "...",
-  "confidence": { ... }
-}
-```
-
-Set in `.env`:
-
-```env
-MODEL_API_URL=http://your-model-endpoint/predict
-```
 
 ---
 

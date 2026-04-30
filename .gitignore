@@ -6,6 +6,14 @@ dist/
 build/
 .vite/
 
+# ================================
+# ML Models (IMPORTANT)
+# ================================
+backend/models/
+*.pth
+*.pth.tar
+*.pt
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

@@ -1,0 +1,7 @@
+{
+  "include": ["backend", "frontend"],
+  "typeCheckingMode": "basic",
+  "reportMissingModuleSource": "none",
+  "reportMissingTypeStubs": "none",
+  "reportMissingImports": "warning"
+}

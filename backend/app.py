@@ -1,36 +1,33 @@
 """
-AI-Based Alzheimer Detection System — Flask Backend
-=====================================================
+app.py — NeuroScan AI Backend
+==============================
+Pipeline: Upload Image → ResNet-18 Prediction → PDF Report → Download
+
 Routes:
-  GET  /           → Health check
-  POST /predict    → Forward image to external model API, return prediction
-  POST /report     → Generate PDF report from prediction data
+  GET  /health   → Health check
+  POST /predict  → Run model, generate and return PDF
 """
-import cv2
-import os
+
 import io
+import os
 import uuid
 import base64
 import logging
-import requests
-import numpy as np
 from datetime import datetime
+
+import torch
+import torch.nn as nn
+from torchvision import transforms, models
+from PIL import Image
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from PIL import Image
 
 from report_generator import generate_pdf_report
 
 # ──────────────────────────────────────────────────────────────
-# App setup
+# Logging
 # ──────────────────────────────────────────────────────────────
-app = Flask(__name__)
-
-# Allow cross-origin requests from the React frontend
-CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
-
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -38,224 +35,169 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────
-# Configuration — set your deployed model URL here (or via env)
+# Constants
 # ──────────────────────────────────────────────────────────────
-EXTERNAL_MODEL_API_URL = os.getenv(
-    "MODEL_API_URL",
-    "http://localhost:8001/predict",   # ← replace with your real endpoint
-)
-
-# Allowed file extensions
+CLASSES = ["Non-Demented", "Very Mild Demented", "Mild Demented", "Moderate Demented"]
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "best_model.pth.tar")
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "bmp", "tiff", "webp"}
+
+# ──────────────────────────────────────────────────────────────
+# Model — loaded once at startup
+# ──────────────────────────────────────────────────────────────
+def _load_model() -> nn.Module:
+    """Load ResNet-18 with custom 4-class head from a .pth.tar checkpoint."""
+    model = models.resnet18(weights=None)
+
+    # Rebuild the custom FC head that matches training architecture
+    in_features = model.fc.in_features
+    model.fc = nn.Sequential(
+        nn.Linear(in_features, 512),
+        nn.ReLU(),
+        nn.Dropout(0.7),
+        nn.Linear(512, len(CLASSES)),
+    )
+
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(
+            f"Model weights not found at '{MODEL_PATH}'. "
+            "Place best_model.pth.tar inside backend/models/."
+        )
+
+    checkpoint = torch.load(MODEL_PATH, map_location="cpu", weights_only=False)
+    state_dict = checkpoint["state_dict"]
+
+# Remove "model." prefix
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        new_key = k.replace("model.", "")
+        new_state_dict[new_key] = v
+
+    model.load_state_dict(new_state_dict)
+    model.eval()
+    logger.info("ResNet-18 checkpoint loaded from %s", MODEL_PATH)
+    return model
+
+
+try:
+    MODEL = _load_model()
+except FileNotFoundError as _err:
+    logger.error("⚠  %s", _err)
+    MODEL = None  # app still starts; /predict will return 503 gracefully
+
+
+# ──────────────────────────────────────────────────────────────
+# Preprocessing transform
+# ──────────────────────────────────────────────────────────────
+_TRANSFORM = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
+
+# ──────────────────────────────────────────────────────────────
+# Flask app
+# ──────────────────────────────────────────────────────────────
+app = Flask(__name__)
+CORS(app, origins=["http://localhost:3000", "http://localhost:5173",
+                   "http://127.0.0.1:3000", "http://127.0.0.1:5173"])
 
 
 # ──────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────
 def allowed_file(filename: str) -> bool:
-    """Return True if the filename has a permitted extension."""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def basic_mri_check(img) -> bool:
-    try:
-        import cv2  # safe import
+def preprocess(pil_image: Image.Image) -> torch.Tensor:
+    """Convert a PIL image to a (1, 3, 224, 224) CPU tensor."""
+    rgb = pil_image.convert("RGB")
+    tensor = _TRANSFORM(rgb)          # (3, 224, 224)
+    return tensor.unsqueeze(0)        # (1, 3, 224, 224)
 
-        np_img = np.array(img)
 
-        # 1. Resolution check
-        h, w = np_img.shape[:2]
-        if h < 100 or w < 100:
-            return False
-
-        # 2. Reject colored images
-        if len(np_img.shape) == 3:
-            r, g, b = np_img[:,:,0], np_img[:,:,1], np_img[:,:,2]
-
-            if np.mean(np.abs(r - g)) > 5 or np.mean(np.abs(r - b)) > 5:
-                return False
-
-       # 3. Edge detection (graphs = high edges)
-        gray = cv2.cvtColor(np_img, cv2.COLOR_RGB2GRAY) if len(np_img.shape)==3 else np_img
-
-        # ✅ ADD THIS
-        if np.std(gray) < 10:
-            return False
-
-        edges = cv2.Canny(gray, 50, 150)
-
-        edge_density = np.sum(edges > 0) / (h * w)
-
-        if edge_density > 0.20:
-            return False
-
-        return True
-
-    except Exception as e:
-        print("MRI CHECK ERROR:", e)
-        return False
-
-def preprocess_image(file_obj) -> tuple[bytes, str]:
+def predict(tensor: torch.Tensor) -> tuple[str, float, dict]:
     """
-    Optionally resize / normalise the uploaded image.
-    Returns (raw_bytes, mime_type).
+    Run inference and return (predicted_class, confidence_pct, full_confidence_dict).
     """
-    img = Image.open(file_obj).convert("RGB")
+    with torch.no_grad():
+        logits = MODEL(tensor)                        # (1, 4)
+        probs  = torch.softmax(logits, dim=1)[0]      # (4,)
 
-    # Resize to 224×224 (common CNN input) — keeps aspect via thumbnail
-    img.thumbnail((224, 224), Image.LANCZOS)
+    confidence = {cls: round(float(probs[i]) * 100, 2) for i, cls in enumerate(CLASSES)}
+    predicted_class  = max(confidence, key=confidence.get)
+    confidence_score = confidence[predicted_class]
+    return predicted_class, confidence_score, confidence
 
+
+def image_to_base64(pil_image: Image.Image) -> str:
+    """Encode a PIL image as a base64 PNG string."""
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    pil_image.convert("RGB").save(buf, format="PNG")
     buf.seek(0)
-    return buf.read(), "image/png"
-
-
-def encode_image_base64(image_bytes: bytes) -> str:
-    """Return base64-encoded string of raw image bytes."""
-    return base64.b64encode(image_bytes).decode("utf-8")
+    return base64.b64encode(buf.read()).decode("utf-8")
 
 
 # ──────────────────────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────────────────────
-@app.get("/")
+@app.get("/health")
 def health():
-    """Health-check endpoint."""
-    return jsonify({"status": "ok", "service": "Alzheimer Detection API", "version": "1.0.0"})
+    return jsonify({
+        "status": "ok",
+        "model_loaded": MODEL is not None,
+        "service": "NeuroScan AI",
+        "version": "2.0.0",
+    })
 
 
 @app.post("/predict")
-def predict():
+def predict_route():
     """
-    Receive an MRI/PET scan, forward it to the external model API,
-    and return a structured prediction response.
+    Accept an MRI image, run ResNet-18 inference,
+    generate a PDF report, and return it as a download.
+    """
+    # ── 1. Model readiness ────────────────────────────────────
+    if MODEL is None:
+        return jsonify({"error": "Model not loaded. Place resnet18.pth in backend/models/."}), 503
 
-    Expected form-data:
-        scan (file) — JPEG or PNG image
-    """
-    # ── 1. Validate request ───────────────────────────────────
+    # ── 2. Validate upload ────────────────────────────────────
     if "scan" not in request.files:
-        return jsonify({"error": "No file part named 'scan' in request."}), 400
+        return jsonify({"error": "No file uploaded. Use field name 'scan'."}), 400
 
     file = request.files["scan"]
-
     if file.filename == "":
         return jsonify({"error": "No file selected."}), 400
-
     if not allowed_file(file.filename):
-        return jsonify(
-            {"error": f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"}
-        ), 415
+        return jsonify({"error": f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"}), 415
 
     try:
-        # ── 2. Pre-process and early validation ──────────────
-        pil_img = Image.open(file)
-        
-        # Smart validation layer
-        if not basic_mri_check(pil_img):
-            return jsonify({
-                "error": "Invalid scan — please upload a proper MRI brain image"
-            }), 400
+        # ── 3. Load image ─────────────────────────────────────
+        pil_image = Image.open(file.stream)
 
-        # Reset file pointer after PIL reading
-        file.seek(0)
-
-        image_bytes, mime_type = preprocess_image(file)
-        image_b64 = encode_image_base64(image_bytes)
+        # ── 4. Preprocess + inference ─────────────────────────
+        tensor = preprocess(pil_image)
+        predicted_class, confidence_score, confidence = predict(tensor)
+        alzheimer_detected = predicted_class.lower() != "non-demented"
 
         scan_id = str(uuid.uuid4())[:8].upper()
-        logger.info("Received scan — ID: %s, size: %d bytes", scan_id, len(image_bytes))
+        logger.info("Scan %s → %s (%.1f%%)", scan_id, predicted_class, confidence_score)
 
-        # ── 3. Call external model API ────────────────────────
-        response = requests.post(
-            EXTERNAL_MODEL_API_URL,
-            files={"image": ("scan.png", io.BytesIO(image_bytes), mime_type)},
-            timeout=30,
-        )
-        response.raise_for_status()
-        model_data = response.json()
-
-        # ── 4. Parse and validate model response ─────────────
-        prediction = model_data.get("prediction", "Unknown")
-        confidence = model_data.get("confidence", {})
-
-        # Ensure all four classes are present
-        all_classes = ["Non-Demented", "Very Mild Demented", "Mild Demented", "Moderate Demented"]
-        for cls in all_classes:
-            confidence.setdefault(cls, 0.0)
-
-        top_confidence = confidence.get(prediction, 0.0)
-        alzheimer_detected = prediction.lower() != "non-demented"
-
-        # ── 5. Build structured response ─────────────────────
-        result = {
-            "scan_id": scan_id,
-            "timestamp": datetime.now().isoformat(),
+        # ── 5. Build data dict ────────────────────────────────
+        data = {
+            "scan_id":            scan_id,
+            "timestamp":          datetime.now().isoformat(),
+            "prediction":         predicted_class,
+            "confidence":         confidence,
+            "top_confidence":     confidence_score,
             "alzheimer_detected": alzheimer_detected,
-            "prediction": prediction,
-            "confidence": confidence,
-            "top_confidence": round(top_confidence, 2),
-            "image_b64": image_b64,          # for frontend preview & PDF
+            "image_b64":          image_to_base64(pil_image),
         }
 
-        logger.info(
-            "Prediction complete — ID: %s | Result: %s | Confidence: %.1f%%",
-            scan_id, prediction, top_confidence,
-        )
-        return jsonify(result), 200
+        # ── 6. Generate PDF ───────────────────────────────────
+        
+        return jsonify(data)
 
-    except requests.exceptions.ConnectionError:
-        logger.error("Cannot reach external model API at %s", EXTERNAL_MODEL_API_URL)
-        return jsonify(
-            {
-                "error": "External model API is unreachable. Please ensure your model server is running.",
-                "model_url": EXTERNAL_MODEL_API_URL,
-            }
-        ), 503
-
-    except requests.exceptions.Timeout:
-        logger.error("External model API timed out.")
-        return jsonify({"error": "Model API request timed out. Please retry."}), 504
-
-    except requests.exceptions.HTTPError as exc:
-        logger.error("Model API returned error: %s", exc)
-        return jsonify({"error": f"Model API error: {exc}"}), 502
-
-    except Exception as exc:
-        logger.exception("Unexpected error in /predict: %s", exc)
-        return jsonify({"error": f"Internal server error: {str(exc)}"}), 500
-
-
-@app.post("/report")
-def report():
-    """
-    Generate a PDF report from prediction data.
-
-    Expected JSON body:
-        {
-            "scan_id": "...",
-            "timestamp": "...",
-            "prediction": "...",
-            "confidence": { ... },
-            "top_confidence": 94.2,
-            "alzheimer_detected": true,
-            "image_b64": "..."  (optional)
-        }
-    """
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "JSON body required."}), 400
-
-    required = ["scan_id", "prediction", "confidence", "top_confidence"]
-    missing = [k for k in required if k not in data]
-    if missing:
-        return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
-
-    try:
-        pdf_bytes = generate_pdf_report(data)
-        filename = f"AlzheimerReport_{data['scan_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-
+        # ── 7. Return PDF as download ─────────────────────────
         return send_file(
             io.BytesIO(pdf_bytes),
             mimetype="application/pdf",
@@ -264,8 +206,31 @@ def report():
         )
 
     except Exception as exc:
-        logger.exception("Error generating PDF: %s", exc)
-        return jsonify({"error": f"PDF generation failed: {str(exc)}"}), 500
+        logger.exception("Error in /predict: %s", exc)
+        return jsonify({"error": f"Internal server error: {str(exc)}"}), 500
+
+
+@app.post("/report")
+def report_route():
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        pdf_bytes = generate_pdf_report(data)
+
+        filename = f"NeuroScan_{data.get('scan_id', 'report')}.pdf"
+
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ──────────────────────────────────────────────────────────────
@@ -273,5 +238,5 @@ def report():
 # ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
-    logger.info("Starting Alzheimer Detection Backend on port %d", port)
+    logger.info("Starting NeuroScan AI backend on port %d", port)
     app.run(host="0.0.0.0", port=port, debug=True)
