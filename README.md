@@ -6,31 +6,57 @@ An end-to-end AI-assisted Alzheimer's disease detection web application for heal
 
 ## 📁 Project Structure
 
-```
-Upload MRI/
-├── backend/
-│   ├── app.py                  ← Flask API server (main)
-│   ├── report_generator.py     ← PDF report generation (reportlab)
-│   ├── mock_model_server.py    ← Local mock model for testing
-│   ├── requirements.txt        ← Python dependencies
-│   └── .env.example            ← Environment variable template
+---
+
+NeuroScan-AI/
 │
-└── frontend/
-    ├── public/
-    │   └── index.html
-    ├── src/
-    │   ├── App.jsx             ← Root component (state + API flow)
-    │   ├── index.js
-    │   ├── index.css
-    │   ├── api.js              ← Axios API client
-    │   └── components/
-    │       ├── Navbar.jsx
-    │       ├── UploadZone.jsx
-    │       ├── AnalyzingSpinner.jsx
-    │       ├── ConfidenceChart.jsx
-    │       └── ResultsPanel.jsx
-    └── package.json
-```
+├── backend/
+│   ├── app.py                      # Flask API (prediction + report endpoints)
+│   ├── report_generator.py         # PDF generation (ReportLab)
+│   ├── requirements.txt            # Python dependencies
+│   ├── models/
+│   │   ├── .gitkeep                # Keeps folder tracked (model not included)
+│   │   └── README.md               # Instructions to download model
+│   │
+│   ├── utils/                      # Helper utilities (optional future use)
+│   │   └── image_processing.py     # (optional) preprocessing functions
+│   │
+│   ├── config.py                   # Config (paths, constants)
+│   └── .env.example                # Environment variables template
+│
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   │
+│   ├── src/
+│   │   ├── App.jsx                 # Root logic (state + API flow)
+│   │   ├── main.jsx                # Entry point (Vite)
+│   │   ├── index.css
+│   │   ├── api.js                  # Axios API client
+│   │
+│   │   ├── components/
+│   │   │   ├── Navbar.jsx
+│   │   │   ├── UploadZone.jsx
+│   │   │   ├── AnalyzingSpinner.jsx
+│   │   │   ├── ConfidenceChart.jsx
+│   │   │   └── ResultsPanel.jsx
+│   │
+│   │   └── assets/                 # Images, icons (optional)
+│   │
+│   └── package.json
+│
+├── docs/                           # Documentation (optional but powerful)
+│   ├── screenshots/
+│   │   ├── upload.png
+│   │   ├── result.png
+│   │   └── report.png
+│   └── architecture.md
+│
+├── .gitignore
+├── README.md
+└── LICENSE (optional)
+
+---
 
 ---
 
@@ -57,44 +83,7 @@ Upload MRI/
 <img width="651" height="421" alt="image" src="https://github.com/user-attachments/assets/ab1586e8-b74d-4ed5-826e-924ed36c2835" />
 
 
-### 1️⃣ Backend Setup
 
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
----
-
-### 2️⃣ Start Mock Model (for testing)
-
-```bash
-python mock_model_server.py
-# Runs on http://localhost:8001
-```
-
----
-
-### 3️⃣ Start Flask Backend
-
-```bash
-python app.py
-# Runs on http://localhost:5000
-```
-
----
-
-### 4️⃣ Frontend Setup
-
-```bash
-cd frontend
-npm install
-npm run dev   # (Vite)
-```
-
-👉 Open: `http://localhost:3000`
-
----
 
 ## 🔗 API Reference
 
