@@ -2,50 +2,39 @@
 
 An end-to-end AI-assisted Alzheimer's disease detection web application for healthcare professionals. Upload MRI/PET brain scans and receive instant AI-powered predictions, confidence visualizations, intelligent validation feedback, and downloadable medical-grade reports.
 
----
-
-## 📁 Project Structure
-
----
-
+```bash
 NeuroScan-AI/
 │
 ├── backend/
-│   ├── app.py                      # Flask API (prediction + report endpoints)
-│   ├── report_generator.py         # PDF generation (ReportLab)
-│   ├── requirements.txt            # Python dependencies
+│   ├── app.py                  # Flask API (prediction + report)
+│   ├── report_generator.py     # PDF generation (ReportLab)
+│   ├── requirements.txt        # Python dependencies
 │   ├── models/
-│   │   ├── .gitkeep                # Keeps folder tracked (model not included)
-│   │   └── README.md               # Instructions to download model
-│   │
-│   ├── utils/                      # Helper utilities (optional future use)
-│   │   └── image_processing.py     # (optional) preprocessing functions
-│   │
-│   ├── config.py                   # Config (paths, constants)
-│   └── .env.example                # Environment variables template
+│   │   ├── .gitkeep            # Keeps folder tracked
+│   │   └── README.md           # Model download instructions
+│   ├── utils/
+│   │   └── image_processing.py # (optional)
+│   ├── config.py
+│   └── .env.example
 │
 ├── frontend/
 │   ├── public/
 │   │   └── index.html
-│   │
 │   ├── src/
-│   │   ├── App.jsx                 # Root logic (state + API flow)
-│   │   ├── main.jsx                # Entry point (Vite)
+│   │   ├── App.jsx
+│   │   ├── main.jsx
 │   │   ├── index.css
-│   │   ├── api.js                  # Axios API client
-│   │
+│   │   ├── api.js
 │   │   ├── components/
 │   │   │   ├── Navbar.jsx
 │   │   │   ├── UploadZone.jsx
 │   │   │   ├── AnalyzingSpinner.jsx
 │   │   │   ├── ConfidenceChart.jsx
 │   │   │   └── ResultsPanel.jsx
-│   │
-│   │   └── assets/                 # Images, icons (optional)
-│   │
+│   │   └── assets/
 │   └── package.json
 │
-├── docs/                           # Documentation (optional but powerful)
+├── docs/
 │   ├── screenshots/
 │   │   ├── upload.png
 │   │   ├── result.png
@@ -54,11 +43,8 @@ NeuroScan-AI/
 │
 ├── .gitignore
 ├── README.md
-└── LICENSE (optional)
-
----
-
----
+└── LICENSE
+```
 
 ## 🛠 Prerequisites
 
@@ -264,8 +250,10 @@ MODEL_API_URL=http://your-model-endpoint/predict
 
 ## 👨‍💻 Author
 
-Shreyans Jaiswal (23124103)
+Shreyans Jaiswal (23124103) 
+<br>
 Abhinoor Tayal (23124003)
+<br>
 Parav Sharma (23124072)
 
 ---
