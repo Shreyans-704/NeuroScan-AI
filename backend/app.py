@@ -91,6 +91,10 @@ except FileNotFoundError as _err:
 _TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
 ])
 
 # ──────────────────────────────────────────────────────────────
@@ -136,6 +140,32 @@ def image_to_base64(pil_image: Image.Image) -> str:
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("utf-8")
 
+import numpy as np
+import cv2
+
+def is_valid_mri(image: Image.Image) -> bool:
+    img = np.array(image.convert("L"))
+
+    # Too bright → likely document/screenshot
+    if np.mean(img) > 200:
+        return False
+
+    # Too dark
+    if np.mean(img) < 20:
+        return False
+
+    # Edge density (MRI has structure)
+    edges = cv2.Canny(img, 50, 150)
+    edge_density = np.sum(edges > 0) / edges.size
+
+    if edge_density < 0.02:
+        return False
+
+    # Low variation → reject
+    if img.std() < 15:
+        return False
+
+    return True
 
 # ──────────────────────────────────────────────────────────────
 # Routes
@@ -173,6 +203,11 @@ def predict_route():
     try:
         # ── 3. Load image ─────────────────────────────────────
         pil_image = Image.open(file.stream)
+        # 🚫 Reject non-MRI images
+        if not is_valid_mri(pil_image):
+            return jsonify({
+                "error": "Invalid scan. Please upload a valid brain MRI image."
+            }), 400
 
         # ── 4. Preprocess + inference ─────────────────────────
         tensor = preprocess(pil_image)

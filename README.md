@@ -240,3 +240,12 @@ Parav Sharma (23124072)
 ## ⭐ If you like this project
 
 Give it a ⭐ on GitHub and use it in your portfolio!
+
+#Frontend
+cd "c:\Users\shrey\OneDrive\Desktop\CODING\NeuroScan AI\frontend"
+npm run dev
+
+#Backend
+cd "c:\Users\shrey\OneDrive\Desktop\CODING\NeuroScan AI\backend"
+python app.py
+
